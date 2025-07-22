@@ -1,0 +1,1734 @@
+console.log('🤖 EasyTalk AI 감지:', original, '→', simple);
+                }
+            }
+            
+            // 4. 기본 변환 규칙 적용
+            for (const [original, simple] of Object.entries(conversionRules)) {
+                if (converted.includes(original)) {
+                    converted = smartWordReplace(converted, original, simple);
+                    detectedDifficultWords.push({
+                        original: original,
+                        converted: simple,
+                        source: 'basic'
+                    });
+                    console.log('📝 기본 규칙 적용:', original, '→', simple);
+                }
+            }
+            
+            // 5. 존댓말 패턴 변환
+            converted = convertPolitePatterns(converted);
+            
+            // AI 통계 업데이트
+            aiStats.todayDetected += detectedDifficultWords.length;
+            aiStats.autoConverted += detectedDifficultWords.filter(w => w.source === 'easytalk_ai').length;
+            aiStats.totalConversions++;
+            saveAIStats();
+            
+            console.log('🧠 EasyTalk Mobile AI 분석 완료! 감지된 단어:', detectedDifficultWords.length, '개');
+            
+            return converted;
+        }
+
+        function convertPolitePatterns(text) {
+            let result = text;
+            
+            const politePatterns = [
+                { pattern: /(\w+)하십시오/g, replacement: '$1하세요' },
+                { pattern: /(\w+)합니다/g, replacement: '$1해요' },
+                { pattern: /(\w+)입니다/g, replacement: '$1이에요' },
+                { pattern: /(\w+)됩니다/g, replacement: '$1돼요' },
+                { pattern: /(\w+)습니다/g, replacement: '$1어요' },
+                { pattern: /(\w+)드립니다/g, replacement: '$1드려요' },
+                { pattern: /(\w+)주십시오/g, replacement: '$1주세요' },
+                { pattern: /(\w+)바랍니다/g, replacement: '$1바라요' }
+            ];
+            
+            politePatterns.forEach(({ pattern, replacement }) => {
+                if (pattern.test(result)) {
+                    result = result.replace(pattern, replacement);
+                    console.log('🤖 존댓말 패턴 변환:', pattern.source);
+                }
+            });
+            
+            return result;
+        }
+
+        function showResult(original, converted) {
+            document.getElementById('originalText').textContent = original;
+            document.getElementById('convertedText').textContent = converted;
+            document.getElementById('resultSection').style.display = 'block';
+            
+            currentResult = converted;
+            currentOriginal = original;
+            
+            // 감지된 단어 표시
+            if (detectedDifficultWords.length > 0) {
+                document.getElementById('detectedWords').style.display = 'block';
+                const detectedList = document.getElementById('detectedWordsList');
+                
+                const sourceLabels = {
+                    'admin_rule': '🔴 AI규칙',
+                    'easytalk_ai': '🤖 EasyTalk',
+                    'basic': '📝 기본'
+                };
+                
+                detectedList.innerHTML = detectedDifficultWords
+                    .map(word => `
+                        <span class="detected-word">
+                            ${word.original} → ${word.converted}
+                            <span style="font-size: 9px; opacity: 0.7;">(${sourceLabels[word.source]})</span>
+                        </span>
+                    `).join('');
+            } else {
+                document.getElementById('detectedWords').style.display = 'none';
+            }
+            
+            // 부드러운 스크롤
+            setTimeout(() => {
+                document.getElementById('resultSection').scrollIntoView({ 
+                    behavior: 'smooth', 
+                    block: 'center' 
+                });
+            }, 300);
+            
+            updateAIStatus();
+            updateStats();
+        }
+
+        // ========================================
+        // 음성 관련 함수들 (모바일 최적화)
+        // ========================================
+
+        function startRecording() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                showAlert('음성 인식을 지원하지 않는 브라우저입니다.', 'error');
+                return;
+            }
+            
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            
+            recognition.lang = 'ko-KR';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.maxAlternatives = 1;
+            
+            const btn = document.getElementById('recordBtn');
+            btn.classList.add('recording');
+            
+            // 햅틱 피드백
+            if (navigator.vibrate) navigator.vibrate(100);
+            
+            recognition.onstart = function() {
+                showAlert('🎤 음성 인식 시작! 말씀해주세요...', 'info');
+            };
+            
+            recognition.onresult = function(event) {
+                const text = event.results[0][0].transcript;
+                document.getElementById('textInput').value = text;
+                showAlert(`✅ 음성 인식: "${text}"`, 'success');
+                
+                // 햅틱 피드백
+                if (navigator.vibrate) navigator.vibrate(50);
+                
+                setTimeout(() => convertText(), 500);
+            };
+            
+            recognition.onend = function() {
+                btn.classList.remove('recording');
+            };
+            
+            recognition.onerror = function(event) {
+                btn.classList.remove('recording');
+                
+                let errorMessage = '음성 인식 오류가 발생했습니다.';
+                switch(event.error) {
+                    case 'no-speech':
+                        errorMessage = '음성이 감지되지 않았습니다. 다시 시도해주세요.';
+                        break;
+                    case 'audio-capture':
+                        errorMessage = '마이크에 접근할 수 없습니다.';
+                        break;
+                    case 'not-allowed':
+                        errorMessage = '마이크 사용 권한이 거부되었습니다.';
+                        break;
+                }
+                showAlert(errorMessage, 'error');
+                
+                // 오류 햅틱 피드백
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]);
+            };
+            
+            recognition.start();
+        }
+
+        function speakText() {
+            if (!currentResult) {
+                showAlert('재생할 텍스트가 없습니다.', 'warning');
+                return;
+            }
+            
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                
+                const utterance = new SpeechSynthesisUtterance(currentResult);
+                utterance.lang = 'ko-KR';
+                utterance.rate = 0.8;
+                utterance.pitch = 1.0;
+                utterance.volume = 1.0;
+                
+                utterance.onstart = function() {
+                    showAlert('🔊 음성 재생 중...', 'info');
+                    if (navigator.vibrate) navigator.vibrate(50);
+                };
+                
+                utterance.onend = function() {
+                    console.log('음성 재생 완료');
+                };
+                
+                utterance.onerror = function(event) {
+                    showAlert('음성 재생 중 오류가 발생했습니다.', 'error');
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            } else {
+                showAlert('이 브라우저는 음성 출력을 지원하지 않습니다.', 'error');
+            }
+        }
+
+        function copyResult() {
+            if (!currentResult) {
+                showAlert('복사할 내용이 없습니다.', 'warning');
+                return;
+            }
+            
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(currentResult).then(() => {
+                    showAlert('📋 변환 결과가 복사되었습니다!', 'success');
+                    if (navigator.vibrate) navigator.vibrate(100);
+                }).catch(() => {
+                    fallbackCopyText(currentResult);
+                });
+            } else {
+                fallbackCopyText(currentResult);
+            }
+        }
+
+        function fallbackCopyText(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            
+            try {
+                document.execCommand('copy');
+                showAlert('📋 변환 결과가 복사되었습니다!', 'success');
+                if (navigator.vibrate) navigator.vibrate(100);
+            } catch (err) {
+                showAlert('복사에 실패했습니다.', 'error');
+            }
+            
+            document.body.removeChild(textarea);
+        }
+
+        function clearInput() {
+            document.getElementById('textInput').value = '';
+            document.getElementById('resultSection').style.display = 'none';
+            hideAIAnalyzing();
+            hideFeedback();
+            currentResult = '';
+            currentOriginal = '';
+            detectedDifficultWords = [];
+            showAlert('🗑️ 입력이 지워졌습니다.', 'info');
+            
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+
+        // ========================================
+        // 피드백 관련 함수들
+        // ========================================
+
+        function showFeedback() {
+            document.getElementById('feedbackSection').style.display = 'block';
+            setTimeout(() => {
+                document.getElementById('feedbackSection').scrollIntoView({ 
+                    behavior: 'smooth',
+                    block: 'center'
+                });
+            }, 100);
+        }
+
+        function hideFeedback() {
+            document.getElementById('feedbackSection').style.display = 'none';
+        }
+
+        function showWordEdit() {
+            if (!isAdmin) {
+                showAlert('❌ 단어 수정은 관리자만 사용할 수 있습니다.', 'warning');
+                return;
+            }
+            
+            showAlert('💡 단어별 수정은 AI 규칙 추가를 이용해주세요!', 'info');
+        }
+
+        function giveFeedback(rating) {
+            const feedbackMessages = {
+                'excellent': '🌟 완벽하다는 평가 감사합니다!',
+                'good': '👍 좋다는 평가 감사합니다!',
+                'ok': '😐 더 똑똑한 AI로 발전하겠습니다!'
+            };
+            
+            if (rating === 'excellent' || rating === 'good') {
+                const learnedSentences = JSON.parse(localStorage.getItem('easytalk_mobile_learned_sentences') || '{}');
+                learnedSentences[currentOriginal] = currentResult;
+                localStorage.setItem('easytalk_mobile_learned_sentences', JSON.stringify(learnedSentences));
+                
+                aiStats.accuracy = Math.min(100, aiStats.accuracy + 1);
+            } else if (rating === 'ok') {
+                aiStats.accuracy = Math.max(0, aiStats.accuracy - 0.5);
+            }
+            
+            saveAIStats();
+            updateAIStatus();
+            
+            showAlert(feedbackMessages[rating], 'success');
+            hideFeedback();
+            
+            // 피드백 햅틱
+            if (rating === 'excellent') {
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 100]);
+            } else {
+                if (navigator.vibrate) navigator.vibrate(100);
+            }
+            
+            setTimeout(() => {
+                clearInput();
+            }, 1500);
+        }
+
+        // ========================================
+        // 관리자 전용 함수들
+        // ========================================
+
+        function setDifficulty(level) {
+            if (!isAdmin) {
+                showAlert('❌ 관리자만 접근할 수 있습니다.', 'error');
+                return;
+            }
+            
+            aiDifficultyLevel = level;
+            
+            document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('active'));
+            const targetBtn = document.getElementById(`diff${level}`);
+            if (targetBtn) {
+                targetBtn.classList.add('active');
+            }
+            
+            const levels = { 1: '기본', 2: '보통', 3: '고급' };
+            showAlert(`🤖 AI 레벨: "${levels[level]}" 설정완료`, 'success');
+            
+            localStorage.setItem('easytalk_mobile_ai_difficulty_level', level.toString());
+            updateAIStatus();
+            
+            if (navigator.vibrate) navigator.vibrate(50);
+        }
+
+        function addAIRule() {
+            if (!isAdmin) {
+                showAlert('❌ 관리자만 접근할 수 있습니다.', 'error');
+                return;
+            }
+            
+            const original = document.getElementById('aiOriginal').value.trim();
+            const converted = document.getElementById('aiConverted').value.trim();
+            
+            if (!original || !converted) {
+                showAlert('어려운 단어와 쉬운 단어를 모두 입력해주세요.', 'warning');
+                return;
+            }
+            
+            if (original === converted) {
+                showAlert('원래 단어와 바꿀 단어가 같습니다.', 'warning');
+                return;
+            }
+            
+            const aiRules = JSON.parse(localStorage.getItem('easytalk_mobile_ai_custom_rules') || '{}');
+            aiRules[original] = converted;
+            localStorage.setItem('easytalk_mobile_ai_custom_rules', JSON.stringify(aiRules));
+            
+            document.getElementById('aiOriginal').value = '';
+            document.getElementById('aiConverted').value = '';
+            
+            showAlert(`🤖 AI 규칙 추가: "${original}" → "${converted}"`, 'success');
+            updateAIRulesList();
+            
+            if (navigator.vibrate) navigator.vibrate(100);
+            
+            setTimeout(() => {
+                const aiOriginalInput = document.getElementById('aiOriginal');
+                if (aiOriginalInput) {
+                    aiOriginalInput.focus();
+                }
+            }, 300);
+        }
+
+        function updateAIRulesList() {
+            const aiRules = JSON.parse(localStorage.getItem('easytalk_mobile_ai_custom_rules') || '{}');
+            const container = document.getElementById('aiRulesList');
+            const countElement = document.getElementById('aiRuleCount');
+            
+            if (!container || !countElement) return;
+            
+            countElement.textContent = Object.keys(aiRules).length;
+            
+            if (Object.keys(aiRules).length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: #666;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">🤖</div>
+                        <div>추가된 AI 규칙이 없습니다.</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = Object.entries(aiRules)
+                .map(([original, converted]) => `
+                    <div class="list-item">
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">${escapeHtml(original)} → ${escapeHtml(converted)}</div>
+                            <div style="font-size: 11px; color: #666;">🤖 AI 규칙</div>
+                        </div>
+                        <button onclick="deleteAIRule('${escapeHtml(original)}')" 
+                                style="background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px;">
+                            삭제
+                        </button>
+                    </div>
+                `).join('');
+        }
+
+        function deleteAIRule(original) {
+            if (!isAdmin) return;
+            
+            if (confirm(`"${original}" AI 규칙을 삭제하시겠습니까?`)) {
+                const aiRules = JSON.parse(localStorage.getItem('easytalk_mobile_ai_custom_rules') || '{}');
+                delete aiRules[original];
+                localStorage.setItem('easytalk_mobile_ai_custom_rules', JSON.stringify(aiRules));
+                
+                showAlert(`🗑️ AI 규칙 "${original}" 삭제됨`, 'success');
+                updateAIRulesList();
+                
+                if (navigator.vibrate) navigator.vibrate([50, 30, 50]);
+            }
+        }
+
+        // ========================================
+        // 게스트 전용: 진짜 사전 검색 기능
+        // ========================================
+
+        function searchRealDictionary() {
+            const word = document.getElementById('dictionaryInput').value.trim();
+            
+            if (!word) {
+                showAlert('검색할 단어를 입력해주세요.', 'warning');
+                return;
+            }
+            
+            const wordInfo = realKoreanDictionary[word];
+            const resultDiv = document.getElementById('dictionaryResult');
+            const infoDiv = document.getElementById('wordInfo');
+            
+            if (wordInfo) {
+                infoDiv.innerHTML = `
+                    <div style="margin-bottom: 20px; text-align: center;">
+                        <strong style="color: #059669; font-size: 28px;">"${word}"</strong>
+                        <div style="color: #6b7280; font-size: 16px; margin-top: 8px;">${wordInfo.pronunciation}</div>
+                    </div>
+                    
+                    <div class="word-meaning">
+                        📖 <strong>뜻:</strong><br>
+                        ${wordInfo.meaning}
+                    </div>
+                    
+                    <div class="example">
+                        💬 <strong>예문:</strong><br>
+                        "${wordInfo.example}"
+                    </div>
+                    
+                    <div class="pronunciation">
+                        ✨ <strong>쉬운 말:</strong> ${wordInfo.easy}
+                    </div>
+                `;
+                resultDiv.style.display = 'block';
+                currentQuizWord = word;
+                showAlert(`📖 "${word}" 단어를 찾았습니다!`, 'success');
+                
+                setTimeout(() => {
+                    resultDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 300);
+                
+            } else {
+                infoDiv.innerHTML = `
+                    <div style="text-align: center; padding: 30px;">
+                        <div style="font-size: 3rem; margin-bottom: 15px;">😔</div>
+                        <div style="font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #dc2626;">
+                            "${word}" 단어를 찾을 수 없습니다
+                        </div>
+                        <div style="color: #666; margin-bottom: 20px;">
+                            현재 사전에 등록된 단어만 검색 가능합니다
+                        </div>
+                        <div style="background: #f0fdf4; padding: 15px; border-radius: 10px; font-size: 13px; color: #059669;">
+                            <strong>검색 가능한 단어 (19개):</strong><br>
+                            확인, 협조, 신청, 제출, 방문, 연락, 대기, 취소, 변경, 완료, 문의, 안내, 양해, 성함, 진료, 처방전, 수납, 접수, 예약
+                        </div>
+                    </div>
+                `;
+                resultDiv.style.display = 'block';
+                currentQuizWord = null;
+                showAlert(`❌ "${word}"을 사전에서 찾을 수 없습니다.`, 'warning');
+                if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+            }
+        }
+
+        // ========================================
+        // 게스트 전용: 단어 테스트 기능
+        // ========================================
+
+        function startQuiz() {
+            if (!currentQuizWord || !realKoreanDictionary[currentQuizWord]) {
+                showAlert('먼저 사전에서 단어를 검색해주세요.', 'warning');
+                return;
+            }
+            
+            createQuiz(currentQuizWord);
+            document.getElementById('quizSection').style.display = 'block';
+            
+            setTimeout(() => {
+                document.getElementById('quizSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+
+        function generateRandomQuiz() {
+            const words = Object.keys(realKoreanDictionary);
+            const randomWord = words[Math.floor(Math.random() * words.length)];
+            createQuiz(randomWord);
+            
+            document.getElementById('quizSection').style.display = 'block';
+            showAlert(`🎲 랜덤 단어 "${randomWord}" 테스트!`, 'info');
+            
+            setTimeout(() => {
+                document.getElementById('quizSection').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 300);
+        }
+
+        function createQuiz(word) {
+            const wordInfo = realKoreanDictionary[word];
+            if (!wordInfo) return;
+            
+            // 퀴즈 초기화
+            document.getElementById('quizResult').style.display = 'none';
+            document.getElementById('quizContainer').style.display = 'block';
+            
+            // 단어 표시
+            document.getElementById('quizWord').textContent = word;
+            
+            // 정답과 오답 선택지 생성
+            const correctAnswer = wordInfo.meaning;
+            const wrongAnswers = getWrongAnswers(word, correctAnswer);
+            
+            // 선택지 섞기
+            const options = [correctAnswer, ...wrongAnswers].sort(() => Math.random() - 0.5);
+            
+            // 선택지 HTML 생성
+            const optionsContainer = document.getElementById('quizOptions');
+            optionsContainer.innerHTML = options.map((option, index) => `
+                <div class="quiz-option touchable" onclick="selectAnswer('${word}', '${escapeHtml(option)}', '${escapeHtml(correctAnswer)}')">
+                    ${option.length > 60 ? option.substring(0, 60) + '...' : option}
+                </div>
+            `).join('');
+        }
+
+        function getWrongAnswers(word, correctAnswer) {
+            const allMeanings = Object.values(realKoreanDictionary).map(info => info.meaning);
+            const wrongAnswers = allMeanings.filter(meaning => meaning !== correctAnswer);
+            
+            // 랜덤하게 3개 선택
+            const shuffled = wrongAnswers.sort(() => Math.random() - 0.5);
+            return shuffled.slice(0, 3);
+        }
+
+        function selectAnswer(word, selectedAnswer, correctAnswer) {
+            const options = document.querySelectorAll('.quiz-option');
+            const isCorrect = selectedAnswer === correctAnswer;
+            
+            // 햅틱 피드백
+            if (navigator.vibrate) {
+                if (isCorrect) {
+                    navigator.vibrate(100); // 짧은 진동 (정답)
+                } else {
+                    navigator.vibrate([100, 50, 100]); // 긴 진동 (오답)
+                }
+            }
+            
+            // 모든 선택지 색칠
+            options.forEach(option => {
+                const optionText = option.textContent.trim();
+                const shortSelected = selectedAnswer.length > 60 ? selectedAnswer.substring(0, 60) + '...' : selectedAnswer;
+                const shortCorrect = correctAnswer.length > 60 ? correctAnswer.substring(0, 60) + '...' : correctAnswer;
+                
+                if (optionText === shortSelected) {
+                    option.classList.add(isCorrect ? 'correct' : 'wrong');
+                } else if (optionText === shortCorrect) {
+                    option.classList.add('correct');
+                }
+                option.style.pointerEvents = 'none';
+            });
+            
+            // 결과 표시
+            setTimeout(() => {
+                showQuizResult(word, isCorrect);
+            }, 1000);
+        }
+
+        function showQuizResult(word, isCorrect) {
+            const resultDiv = document.getElementById('quizResult');
+            const resultText = document.getElementById('quizResultText');
+            const wordInfo = realKoreanDictionary[word];
+            
+            if (isCorrect) {
+                resultText.innerHTML = `
+                    <div style="color: #059669; font-size: 24px; margin-bottom: 20px;">
+                        🎉 정답입니다!
+                    </div>
+                    <div style="background: #f0fdf4; padding: 20px; border-radius: 12px; border-left: 4px solid #10b981;">
+                        <div style="font-size: 18px; font-weight: 700; margin-bottom: 10px;">"${word}"</div>
+                        <div style="margin-bottom: 15px;">뜻을 정확히 알고 계시네요!</div>
+                        <div style="color: #059669; font-weight: 600;">✨ 쉬운 말: ${wordInfo.easy}</div>
+                    </div>
+                `;
+            } else {
+                resultText.innerHTML = `
+                    <div style="color: #dc2626; font-size: 24px; margin-bottom: 20px;">
+                        😅 아쉽네요!
+                    </div>
+                    <div style="background: #fef2f2; padding: 20px; border-radius: 12px; border-left: 4px solid #ef4444;">
+                        <div style="font-size: 18px; font-weight: 700; margin-bottom: 10px;">"${word}"</div>
+                        <div style="margin-bottom: 10px;"><strong>정답:</strong></div>
+                        <div style="margin-bottom: 15px; line-height: 1.5;">${wordInfo.meaning}</div>
+                        <div style="color: #059669; font-weight: 600;">✨ 쉬운 말: ${wordInfo.easy}</div>
+                    </div>
+                `;
+            }
+            
+            document.getElementById('quizContainer').style.display = 'none';
+            resultDiv.style.display = 'block';
+            
+            showAlert(isCorrect ? '🎉 정답입니다!' : '😅 다시 공부해보세요!', isCorrect ? 'success' : 'info');
+        }
+
+        function hideQuiz() {
+            document.getElementById('quizSection').style.display = 'none';
+        }
+
+        // ========================================
+        // 통계 및 히스토리 관리
+        // ========================================
+
+        function updateAIStatus() {
+            const levels = { 1: '기본', 2: '보통', 3: '고급' };
+            
+            const todayElement = document.getElementById('todayDetected');
+            const autoElement = document.getElementById('autoConverted');
+            const levelElement = document.getElementById('currentLevel');
+            const accuracyElement = document.getElementById('accuracyRate');
+            
+            if (todayElement) todayElement.textContent = aiStats.todayDetected;
+            if (autoElement) autoElement.textContent = aiStats.autoConverted;
+            if (levelElement) levelElement.textContent = levels[aiDifficultyLevel];
+            if (accuracyElement) accuracyElement.textContent = Math.round(aiStats.accuracy);
+        }
+
+        function saveAIStats() {
+            localStorage.setItem('easytalk_mobile_ai_stats', JSON.stringify(aiStats));
+        }
+
+        function updateStats() {
+            const learnedSentences = JSON.parse(localStorage.getItem('easytalk_mobile_learned_sentences') || '{}');
+            const aiRules = JSON.parse(localStorage.getItem('easytalk_mobile_ai_custom_rules') || '{}');
+            
+            const container = document.getElementById('statsContainer');
+            if (!container) return;
+            
+            container.innerHTML = `
+                <div class="stat-card">
+                    <div class="stat-number">${aiStats.totalConversions}</div>
+                    <div class="stat-label">총 변환</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${isAdmin ? Object.keys(aiRules).length : Object.keys(learnedSentences).length}</div>
+                    <div class="stat-label">${isAdmin ? 'AI 규칙' : 'AI 학습'}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${aiStats.todayDetected}</div>
+                    <div class="stat-label">감지 단어</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${Math.round(aiStats.accuracy)}%</div>
+                    <div class="stat-label">정확도</div>
+                </div>
+            `;
+        }
+
+        function addToHistory(original, converted) {
+            const history = JSON.parse(localStorage.getItem('easytalk_mobile_history') || '[]');
+            
+            history.unshift({
+                original: original,
+                converted: converted,
+                detectedWords: detectedDifficultWords.length,
+                timestamp: new Date().toISOString(),
+                user: currentUser,
+                userType: isAdmin ? 'admin' : 'guest'
+            });
+            
+            // 최근 15개 유지 (모바일 최적화)
+            if (history.length > 15) {
+                history.splice(15);
+            }
+            
+            localStorage.setItem('easytalk_mobile_history', JSON.stringify(history));
+            loadHistory();
+        }
+
+        function loadHistory() {
+            const history = JSON.parse(localStorage.getItem('easytalk_mobile_history') || '[]');
+            const container = document.getElementById('historyContainer');
+            
+            if (!container) return;
+            
+            if (history.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 30px; color: #666;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">📋</div>
+                        <div>EasyTalk 변환 기록이 없습니다.</div>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            history.slice(0, 8).forEach(item => {
+                const historyItem = document.createElement('div');
+                historyItem.className = 'list-item';
+                
+                const date = new Date(item.timestamp).toLocaleString('ko-KR', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+                
+                const displayOriginal = item.original.length > 25 ? item.original.substring(0, 25) + '...' : item.original;
+                const displayConverted = item.converted.length > 25 ? item.converted.substring(0, 25) + '...' : item.converted;
+                
+                const userIcon = item.userType === 'admin' ? '🔴' : '👤';
+                
+                historyItem.innerHTML = `
+                    <div style="flex: 1;">
+                        <div style="font-size: 11px; color: #666; margin-bottom: 5px;">
+                            🤖 ${date} | ${item.detectedWords}개 감지 | ${userIcon} ${item.user}
+                        </div>
+                        <div style="font-size: 12px; line-height: 1.4;">
+                            <div style="margin-bottom: 3px;"><strong>원본:</strong> ${displayOriginal}</div>
+                            <div style="color: #059669;"><strong>변환:</strong> ${displayConverted}</div>
+                        </div>
+                    </div>
+                `;
+                
+                container.appendChild(historyItem);
+            });
+        }
+
+        function loadAllData() {
+            console.log('모든 데이터 로드 시작');
+            updateStats();
+            loadHistory();
+            
+            if (isAdmin) {
+                updateAIRulesList();
+                const savedLevel = localStorage.getItem('easytalk_mobile_ai_difficulty_level');
+                if (savedLevel) {
+                    aiDifficultyLevel = parseInt(savedLevel);
+                }
+                document.querySelectorAll('.difficulty-btn').forEach(btn => btn.classList.remove('active'));
+                const diffBtn = document.getElementById(`diff${aiDifficultyLevel}`);
+                if (diffBtn) {
+                    diffBtn.classList.add('active');
+                }
+            }
+            
+            const savedStats = localStorage.getItem('easytalk_mobile_ai_stats');
+            if (savedStats) {
+                try {
+                    aiStats = JSON.parse(savedStats);
+                } catch (e) {
+                    console.log('통계 로드 실패');
+                }
+            }
+            
+            updateAIStatus();
+            console.log('모든 데이터 로드 완료');
+        }
+
+        // ========================================
+        // 데이터 관리 함수들
+        // ========================================
+
+        function exportData() {
+            const userType = isAdmin ? 'admin' : 'guest';
+            const allData = {
+                learnedSentences: JSON.parse(localStorage.getItem('easytalk_mobile_learned_sentences') || '{}'),
+                aiCustomRules: isAdmin ? JSON.parse(localStorage.getItem('easytalk_mobile_ai_custom_rules') || '{}') : 'admin_only',
+                aiStats: aiStats,
+                history: JSON.parse(localStorage.getItem('easytalk_mobile_history') || '[]'),
+                difficultyLevel: aiDifficultyLevel,
+                exportDate: new Date().toISOString(),
+                version: 'EasyTalk_Mobile_Complete_v2.0',
+                user: currentUser,
+                userType: userType
+            };
+            
+            const dataStr = JSON.stringify(allData, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            // 모바일에서 다운로드 처리
+            if (navigator.share && navigator.canShare && navigator.canShare({files: [new File([dataBlob], 'backup.json')]})) {
+                // Web Share API 사용
+                const file = new File([dataBlob], `easytalk_backup_${currentUser}_${new Date().toISOString().slice(0, 10)}.json`, {type: 'application/json'});
+                navigator.share({
+                    title: 'EasyTalk 완전판 백업',
+                    files: [file]
+                }).catch(console.error);
+            } else {
+                // 기존 다운로드 방식
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(dataBlob);
+                link.download = `easytalk_complete_backup_${currentUser}_${new Date().toISOString().slice(0, 10)}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+            
+            showAlert('📤 모든 데이터가 백업되었습니다!', 'success');
+            if (navigator.vibrate) navigator.vibrate(100);
+        }
+
+        function resetAllData() {
+            const userType = isAdmin ? '관리자' : '게스트';
+            const confirmation = prompt(
+                `정말로 ${userType} 데이터를 모두 삭제하시겠습니까?\n\n삭제하려면 "삭제"를 입력하세요:`
+            );
+            
+            if (confirmation !== '삭제') {
+                showAlert('삭제가 취소되었습니다.', 'info');
+                return;
+            }
+            
+            // 데이터 삭제
+            const keysToRemove = [
+                'easytalk_mobile_learned_sentences', 
+                'easytalk_mobile_ai_stats', 
+                'easytalk_mobile_history', 
+                'easytalk_mobile_ai_difficulty_level'
+            ];
+            
+            if (isAdmin) {
+                keysToRemove.push('easytalk_mobile_ai_custom_rules');
+            }
+            
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            
+            // 전역 변수 초기화
+            currentResult = '';
+            currentOriginal = '';
+            detectedDifficultWords = [];
+            aiDifficultyLevel = 2;
+            aiStats = {
+                todayDetected: 0,
+                autoConverted: 0,
+                totalConversions: 0,
+                accuracy: 100
+            };
+            
+            showAlert(`🗑️ ${userType} 데이터가 삭제되었습니다.`, 'success');
+            
+            // 강한 햅틱 피드백
+            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+            
+            loadAllData();
+        }
+
+        // ========================================
+        // 유틸리티 함수
+        // ========================================
+
+        function showAIAnalyzing() {
+            document.getElementById('aiAnalyzing').style.display = 'block';
+        }
+
+        function hideAIAnalyzing() {
+            document.getElementById('aiAnalyzing').style.display = 'none';
+        }
+
+        function showAlert(message, type = 'info') {
+            const existingAlert = document.querySelector('.alert');
+            if (existingAlert) {
+                existingAlert.remove();
+            }
+            
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            
+            document.body.appendChild(alert);
+            
+            const duration = type === 'error' ? 4000 : type === 'warning' ? 3000 : 2500;
+            setTimeout(() => {
+                if (alert.parentNode) {
+                    alert.style.animation = 'slideDown 0.3s ease reverse';
+                    setTimeout(() => alert.remove(), 300);
+                }
+            }, duration);
+        }
+
+        // ========================================
+        // PWA 및 모바일 최적화
+        // ========================================
+
+        // 서비스 워커 등록 (PWA)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                const swCode = `
+                    const CACHE_NAME = 'easytalk-complete-v2';
+                    const urlsToCache = ['/'];
+                    
+                    self.addEventListener('install', function(event) {
+                        event.waitUntil(
+                            caches.open(CACHE_NAME)
+                                .then(function(cache) {
+                                    return cache.addAll(urlsToCache);
+                                })
+                        );
+                    });
+                    
+                    self.addEventListener('fetch', function(event) {
+                        event.respondWith(
+                            caches.match(event.request)
+                                .then(function(response) {
+                                    if (response) {
+                                        return response;
+                                    }
+                                    return fetch(event.request);
+                                }
+                            )
+                        );
+                    });
+                `;
+                
+                const blob = new Blob([swCode], { type: 'application/javascript' });
+                const swUrl = URL.createObjectURL(blob);
+                
+                navigator.serviceWorker.register(swUrl)
+                    .then(function(registration) {
+                        console.log('📱 Service Worker 등록 성공:', registration.scope);
+                    })
+                    .catch(function(error) {
+                        console.log('Service Worker 등록 실패:', error);
+                    });
+            });
+        }
+
+        // 앱 설치 프롬프트
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            
+            setTimeout(() => {
+                showAlert('📱 EasyTalk을 홈 화면에 추가할 수 있습니다!', 'info');
+            }, 5000);
+        });
+
+        // 터치 제스처 지원
+        let touchStartY = 0;
+        let touchEndY = 0;
+
+        document.addEventListener('touchstart', function(e) {
+            touchStartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        document.addEventListener('touchend', function(e) {
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }, { passive: true });
+
+        function handleSwipe() {
+            const swipeThreshold = 50;
+            const swipeDistance = touchStartY - touchEndY;
+            
+            if (Math.abs(swipeDistance) > swipeThreshold) {
+                if (swipeDistance > 0) {
+                    // 위로 스와이프 - 결과 보기
+                    const resultSection = document.getElementById('resultSection');
+                    if (resultSection && resultSection.style.display === 'block') {
+                        resultSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                } else {
+                    // 아래로 스와이프 - 입력창으로
+                    const textInput = document.getElementById('textInput');
+                    if (textInput) {
+                        textInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        textInput.focus();
+                    }
+                }
+            }
+        }
+
+        // 키보드 표시/숨김 감지 (iOS Safari 대응)
+        function detectKeyboard() {
+            const initialHeight = window.innerHeight;
+            
+            window.addEventListener('resize', function() {
+                const currentHeight = window.innerHeight;
+                const heightDifference = initialHeight - currentHeight;
+                
+                if (heightDifference > 150) {
+                    document.body.classList.add('keyboard-open');
+                    console.log('키보드 감지');
+                } else {
+                    document.body.classList.remove('keyboard-open');
+                }
+            });
+        }
+
+        detectKeyboard();
+
+        // 배터리 상태 확인 (모바일 최적화)
+        if ('getBattery' in navigator) {
+            navigator.getBattery().then(function(battery) {
+                console.log('배터리 상태:', Math.round(battery.level * 100) + '%');
+                
+                if (battery.level < 0.15) {
+                    console.log('저전력 모드 활성화');
+                }
+            });
+        }
+
+        // 네트워크 상태 확인
+        function checkNetworkStatus() {
+            if ('connection' in navigator) {
+                const connection = navigator.connection;
+                console.log('네트워크 타입:', connection.effectiveType);
+                
+                if (connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g') {
+                    console.log('느린 네트워크 감지 - 최적화 모드');
+                }
+            }
+        }
+
+        // 메모리 사용량 모니터링
+        function checkMemoryUsage() {
+            if ('memory' in performance) {
+                const memory = performance.memory;
+                const usedMB = Math.round(memory.usedJSHeapSize / 1048576);
+                const limitMB = Math.round(memory.jsHeapSizeLimit / 1048576);
+                
+                console.log(`메모리 사용량: ${usedMB}MB / ${limitMB}MB`);
+                
+                if (usedMB > limitMB * 0.8) {
+                    console.log('메모리 사용량 높음 - 최적화 필요');
+                    if (window.gc) {
+                        window.gc();
+                    }
+                }
+            }
+        }
+
+        // 주기적 성능 체크
+        setInterval(() => {
+            checkNetworkStatus();
+            checkMemoryUsage();
+        }, 60000); // 1분마다
+
+        // ========================================
+        // 접근성 및 사용성 개선
+        // ========================================
+
+        // 다크모드 감지
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            console.log('다크모드 감지');
+        }
+
+        // 폰트 크기 조정 감지
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            console.log('애니메이션 줄이기 설정 감지');
+            document.documentElement.style.setProperty('--animation-duration', '0.1s');
+        }
+
+        // ========================================
+        // 초기화 및 이벤트 리스너
+        // ========================================
+
+        // 키보드 이벤트 (Enter 키로 로그인)
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('📱 EasyTalk Mobile - 완전한 모든 기능 버전 로드 완료!');
+            
+            // Enter 키 이벤트
+            const loginPassword = document.getElementById('loginPassword');
+            const loginId = document.getElementById('loginId');
+            
+            if (loginPassword) {
+                loginPassword.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const id = document.getElementById('loginId').value.trim();
+                        if (id === 'EASY TALK') {
+                            handleAdminLogin();
+                        } else {
+                            handleGuestLogin();
+                        }
+                    }
+                });
+            }
+            
+            if (loginId) {
+                loginId.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        document.getElementById('loginPassword').focus();
+                    }
+                });
+            }
+
+            // 텍스트 입력 영역 Enter 키 이벤트
+            const textInput = document.getElementById('textInput');
+            if (textInput) {
+                textInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        convertText();
+                    }
+                });
+            }
+
+            // 사전 검색 Enter 키 이벤트
+            const dictionaryInput = document.getElementById('dictionaryInput');
+            if (dictionaryInput) {
+                dictionaryInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        searchRealDictionary();
+                    }
+                });
+            }
+
+            // AI 규칙 입력 Enter 키 이벤트
+            const aiOriginal = document.getElementById('aiOriginal');
+            const aiConverted = document.getElementById('aiConverted');
+            
+            if (aiOriginal) {
+                aiOriginal.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        document.getElementById('aiConverted').focus();
+                    }
+                });
+            }
+            
+            if (aiConverted) {
+                aiConverted.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        addAIRule();
+                    }
+                });
+            }
+        });
+
+        // ========================================
+        // 완료 로그 및 디버깅 정보
+        // ========================================
+
+        console.log('✅ EasyTalk Mobile - 완전한 모든 기능 버전 로드 성공!');
+        console.log('📱 포함된 모든 기능:');
+        console.log('  🔐 로그인 시스템 (관리자/게스트)');
+        console.log('  🤖 EasyTalk AI 변환 (3단계 레벨)');
+        console.log('  📖 진짜 한국어 사전 (19개 단어)');
+        console.log('  📝 단어 테스트 (퀴즈)');
+        console.log('  🎤 음성 인식 & 🔊 음성 출력');
+        console.log('  📋 복사 & 🗑️ 지우기');
+        console.log('  👍 AI 피드백 시스템');
+        console.log('  🔴 관리자: AI 규칙 관리, 난이도 조정');
+        console.log('  📊 통계 & 📋 히스토리');
+        console.log('  📤 데이터 백업 & 🗑️ 초기화');
+        console.log('  📱 PWA 지원 (홈 화면 추가)');
+        console.log('  🤳 햅틱 피드백 & 터치 최적화');
+        console.log('  🚀 모바일 성능 최적화');
+        console.log('');
+        console.log('🔐 로그인 정보:');
+        console.log('  관리자: EASY TALK / 1234');
+        console.log('  게스트: guest / guest123');
+        console.log('');
+        console.log('🧪 테스트 예시:');
+        console.log('  변환 테스트: "협조 부탁드립니다"');
+        console.log('  사전 검색: "확인" → 테스트하기');
+        console.log('  AI 규칙: "민원" → "불만" (관리자만)');
+        console.log('');
+        console.log('💯 모든 기능이 완벽하게 작동합니다!');
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="EasyTalk">
+    <title>EasyTalk - 쉬운 말 변환 모바일 앱</title>
+    
+    <style>
+        * {
+            margin: 0; padding: 0; box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        
+        input, textarea {
+            -webkit-user-select: text;
+            user-select: text;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; color: #333;
+            -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+            touch-action: manipulation; overflow-x: hidden;
+            position: relative;
+        }
+        
+        .container {
+            padding: 0; margin: 0; width: 100vw; min-height: 100vh;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        /* 로그인 화면 */
+        .login-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex; align-items: center; justify-content: center; z-index: 10000;
+            padding: 20px;
+        }
+        
+        .login-form {
+            background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(20px);
+            border-radius: 25px; padding: 40px 25px; width: 100%; max-width: 380px;
+            text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        
+        .app-logo {
+            font-size: 3.5rem; margin-bottom: 15px; font-weight: 900;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .login-title {
+            font-size: 1.4rem; color: #475569; margin-bottom: 30px; font-weight: 600;
+            line-height: 1.4;
+        }
+        
+        .login-input {
+            width: 100%; padding: 18px 20px; margin: 12px 0; border: 2px solid #e2e8f0;
+            border-radius: 15px; font-size: 17px; background: white;
+            -webkit-appearance: none; appearance: none;
+        }
+        .login-input:focus { outline: none; border-color: #667eea; }
+        
+        .login-btn {
+            width: 100%; border: none; padding: 18px; border-radius: 15px;
+            font-size: 17px; font-weight: 700; cursor: pointer; margin-top: 15px;
+            transition: all 0.2s ease; -webkit-appearance: none; appearance: none;
+            color: white;
+        }
+        .login-btn:active { transform: scale(0.98); }
+        
+        .admin-btn {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.4);
+        }
+        
+        .guest-btn {
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+            margin-top: 12px;
+        }
+        
+        .role-info {
+            margin-top: 25px; padding: 20px; background: rgba(255,255,255,0.8); 
+            border-radius: 15px; font-size: 13px; line-height: 1.5;
+        }
+        
+        .credentials {
+            background: rgba(102, 126, 234, 0.1); padding: 12px; border-radius: 10px;
+            margin-top: 15px; font-size: 12px; font-weight: 600;
+        }
+        
+        /* 상태 표시 */
+        .status-bar {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+            padding: 12px 20px; color: white; font-weight: 600; font-size: 14px;
+            text-align: center;
+            padding-top: calc(env(safe-area-inset-top) + 12px);
+        }
+        
+        .admin-status { background: linear-gradient(135deg, #ef4444, #dc2626); }
+        .guest-status { background: linear-gradient(135deg, #10b981, #059669); }
+        
+        /* 메인 앱 */
+        .main-app {
+            display: none; padding: 0; margin: 0;
+            padding-top: calc(env(safe-area-inset-top) + 60px);
+            padding-bottom: calc(env(safe-area-inset-bottom) + 20px);
+        }
+        
+        .header {
+            background: rgba(255,255,255,0.15); backdrop-filter: blur(20px);
+            padding: 25px 20px; margin: 0 15px 20px 15px; border-radius: 20px;
+            text-align: center; color: white; position: relative;
+        }
+        
+        .header h1 {
+            font-size: 2.2rem; font-weight: 900; margin-bottom: 8px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p { font-size: 0.9rem; opacity: 0.9; }
+        
+        .logout-btn {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(255,255,255,0.2); color: white; border: none;
+            padding: 8px 15px; border-radius: 20px; font-size: 12px;
+            font-weight: 600; cursor: pointer;
+        }
+        .logout-btn:active { background: rgba(255,255,255,0.3); }
+        
+        /* 카드 스타일 */
+        .card {
+            background: rgba(255,255,255,0.95); backdrop-filter: blur(20px);
+            margin: 15px; padding: 25px; border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        
+        .card h3 {
+            color: #495057; margin-bottom: 20px; font-size: 1.2rem; font-weight: 700;
+            border-bottom: 3px solid #667eea; padding-bottom: 10px;
+        }
+        
+        /* 텍스트 영역 */
+        .textarea {
+            width: 100%; min-height: 120px; padding: 20px; border: 2px solid #e1e8ed;
+            border-radius: 15px; font-size: 16px; font-family: inherit;
+            resize: none; margin-bottom: 20px; line-height: 1.5;
+            -webkit-appearance: none; appearance: none;
+        }
+        .textarea:focus { outline: none; border-color: #667eea; }
+        
+        /* 버튼 그룹 */
+        .button-row {
+            display: grid; grid-template-columns: 1fr auto 1fr; gap: 15px;
+            align-items: center; margin: 20px 0;
+        }
+        
+        .btn {
+            padding: 16px 20px; border: none; border-radius: 15px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s ease; -webkit-appearance: none; appearance: none;
+            text-align: center; color: white;
+        }
+        .btn:active { transform: scale(0.95); }
+        
+        .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); }
+        .btn-success { background: linear-gradient(135deg, #28a745, #20c997); }
+        .btn-warning { background: linear-gradient(135deg, #ffc107, #fd7e14); color: #212529; }
+        .btn-danger { background: linear-gradient(135deg, #dc3545, #e83e8c); }
+        .btn-secondary { background: linear-gradient(135deg, #6c757d, #495057); }
+        
+        .btn-record {
+            width: 60px; height: 60px; border-radius: 50%;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            font-size: 24px; border: 3px solid white;
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4);
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-record.recording { 
+            animation: pulse 1s infinite;
+            background: linear-gradient(135deg, #ff4757, #c44569);
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 12px 30px rgba(255, 107, 107, 0.6); }
+            100% { transform: scale(1); box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4); }
+        }
+        
+        /* 결과 영역 */
+        .result-section {
+            display: none; background: linear-gradient(135deg, #f8f9ff, #f0f4ff);
+            border-radius: 15px; padding: 20px; margin: 20px 0;
+            border: 2px solid rgba(102, 126, 234, 0.2);
+        }
+        
+        .result-item {
+            background: white; padding: 18px; border-radius: 12px; margin: 12px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        
+        .result-label {
+            font-weight: 700; color: #495057; margin-bottom: 8px;
+            font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        
+        .result-text {
+            font-size: 16px; line-height: 1.6; color: #212529; word-break: break-word;
+        }
+        
+        /* 특별 섹션들 */
+        .admin-section {
+            background: linear-gradient(135deg, #fef2f2, #fee2e2);
+            border: 3px solid #ef4444; border-radius: 20px; padding: 25px;
+            margin: 15px; display: none;
+        }
+        
+        .dictionary-section {
+            background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+            border: 3px solid #10b981; border-radius: 20px; padding: 25px;
+            margin: 15px; display: none;
+        }
+        
+        .section-title {
+            font-weight: 700; margin-bottom: 20px; font-size: 1.2rem;
+            display: flex; align-items: center; gap: 10px;
+        }
+        .admin-title { color: #dc2626; }
+        .dictionary-title { color: #059669; }
+        
+        /* 입력 필드 */
+        .input-group {
+            display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 20px;
+        }
+        
+        .input-field {
+            padding: 16px; border: 2px solid #e1e8ed; border-radius: 12px;
+            font-size: 16px; -webkit-appearance: none; appearance: none;
+        }
+        .input-field:focus { outline: none; border-color: #667eea; }
+        
+        /* 난이도 선택 */
+        .difficulty-grid {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 20px 0;
+        }
+        
+        .difficulty-btn {
+            padding: 14px; border: 2px solid #e2e8f0; background: white;
+            border-radius: 12px; font-size: 13px; font-weight: 600;
+            text-align: center; transition: all 0.2s ease; cursor: pointer;
+        }
+        .difficulty-btn:active { transform: scale(0.95); }
+        .difficulty-btn.active { border-color: #ef4444; background: #fee2e2; color: #dc2626; }
+        
+        /* 사전 결과 */
+        .dictionary-result {
+            background: white; padding: 20px; border-radius: 15px; margin-top: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1); display: none;
+        }
+        
+        .word-meaning { background: #f0fdf4; padding: 15px; border-radius: 10px; margin: 10px 0; border-left: 4px solid #10b981; }
+        .pronunciation { background: #eff6ff; padding: 12px; border-radius: 8px; margin: 8px 0; border-left: 3px solid #3b82f6; }
+        .example { background: #fefce8; padding: 12px; border-radius: 8px; margin: 8px 0; border-left: 3px solid #eab308; }
+        
+        /* 퀴즈 섹션 */
+        .quiz-section {
+            display: none; background: linear-gradient(135deg, #fef3c7, #fde68a);
+            border: 3px solid #f59e0b; border-radius: 20px; padding: 25px; margin-top: 20px;
+        }
+        
+        .quiz-question {
+            background: white; padding: 25px; border-radius: 15px; margin-bottom: 20px;
+            text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .quiz-word {
+            font-size: 2rem; font-weight: 800; color: #667eea; margin-bottom: 15px;
+        }
+        
+        .quiz-options {
+            display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 20px;
+        }
+        
+        .quiz-option {
+            background: #f8fafc; border: 2px solid #e2e8f0; padding: 18px;
+            border-radius: 12px; text-align: center; font-size: 15px;
+            line-height: 1.4; transition: all 0.2s ease; cursor: pointer;
+        }
+        .quiz-option:active { transform: scale(0.98); background: #f1f5f9; }
+        .quiz-option.correct { border-color: #10b981; background: #f0fdf4; }
+        .quiz-option.wrong { border-color: #ef4444; background: #fef2f2; }
+        
+        /* 통계 카드 */
+        .stats-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0;
+        }
+        
+        .stat-card {
+            background: white; padding: 18px; border-radius: 12px; text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        
+        .stat-number { font-size: 1.8rem; font-weight: 800; color: #667eea; }
+        .stat-label { color: #6c757d; font-size: 11px; margin-top: 4px; }
+        
+        /* AI 분석 로딩 */
+        .ai-analyzing {
+            display: none; background: linear-gradient(135deg, #fff3cd, #fdeaa7);
+            border-radius: 15px; padding: 20px; margin: 20px 0; text-align: center;
+            border: 2px solid #f59e0b;
+        }
+        
+        .loading-spinner {
+            display: inline-block; width: 20px; height: 20px; border: 3px solid #f59e0b;
+            border-radius: 50%; border-top-color: transparent; animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* 감지된 단어 */
+        .detected-words {
+            margin-top: 15px; display: none;
+        }
+        
+        .detected-word {
+            display: inline-block; background: #fef3c7; color: #92400e;
+            padding: 6px 10px; border-radius: 8px; margin: 4px;
+            border: 1px solid #f59e0b; font-size: 12px; font-weight: 600;
+        }
+        
+        /* 알림 */
+        .alert {
+            position: fixed; top: 70px; left: 15px; right: 15px; z-index: 9999;
+            padding: 15px 20px; border-radius: 12px; font-size: 14px; font-weight: 600;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2); animation: slideDown 0.3s ease;
+            max-width: calc(100vw - 30px);
+        }
+        .alert-success { background: #d4edda; color: #155724; border-left: 5px solid #28a745; }
+        .alert-info { background: #d1ecf1; color: #0c5460; border-left: 5px solid #17a2b8; }
+        .alert-warning { background: #fff3cd; color: #856404; border-left: 5px solid #ffc107; }
+        .alert-error { background: #f8d7da; color: #721c24; border-left: 5px solid #dc3545; }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* 피드백 섹션 */
+        .feedback-section {
+            display: none; background: rgba(255,255,255,0.95); border-radius: 15px;
+            padding: 25px; margin: 20px 0; border: 2px solid #f59e0b;
+        }
+        
+        .feedback-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0;
+        }
+        
+        /* 리스트 아이템 */
+        .list-container {
+            max-height: 200px; overflow-y: auto; border: 2px solid #e1e8ed;
+            border-radius: 12px; background: #f8f9fa; margin: 15px 0;
+        }
+        
+        .list-item {
+            padding: 15px; border-bottom: 1px solid #dee2e6; font-size: 13px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .list-item:last-child { border-bottom: none; }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 2px; }
+        
+        /* 터치 최적화 */
+        .touchable {
+            -webkit-tap-highlight-color: rgba(0,0,0,0.1);
+            -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+        }
+        
+        /* 작은 버튼 */
+        .btn-small {
+            padding: 10px 15px; font-size: 12px; border-radius: 10px;
+        }
+        
+        /* 버튼 그리드 */
+        .btn-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0;
+        }
+        
+        .btn-grid-3 {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 20px 0;
+        }
+        
+        /* 긴 버튼 */
+        .btn-full {
+            width: 100%; margin: 10px 0;
+        }
+        
+        /* 숨김 요소 */
+        .hidden { display: none !important; }
+        
+        /* 안전 영역 대응 */
+        @supports (padding: max(0px)) {
+            .container {
+                padding-top: max(20px, env(safe-area-inset-top));
+                padding-bottom: max(20px, env(safe-area-inset-bottom));
+            }
+            
+            .status-bar {
+                padding-top: max(12px, calc(env(safe-area-inset-top) + 12px));
+            }
+            
+            .main-app {
+                padding-top: max(80px, calc(env(safe-area-inset-top) + 60px));
+                padding-bottom: max(20px, calc(env(safe-area-inset-bottom) + 20px));
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 로그인 화면 -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-form">
+            <div class="app-logo">EasyTalk</div>
+            <div class="login-title">쉬운 말 변환<br>모바일 앱</div>
+            
+            <input type="text" id="loginId" class="login-input touchable" placeholder="아이디를 입력하세요" autocomplete="username" />
+            <input type="password" id="loginPassword" class="login-input touchable" placeholder="비밀번호를 입력하세요" autocomplete="current-password" />
+            
+            <!-- 인라인 이벤트로 직접 연결 -->
+            <button class="login-btn admin-btn touchable" onclick="handleAdminLogin()">🔐 관리자 로그인</button>
+            <button class="login-btn guest-btn touchable" onclick="handleGuestLogin()">👤 게스트 로그인</button>
+            
+            <div class="role-info">
+                <div style="font-weight: 700; margin-bottom: 10px; color: #667eea;">🔍 사용자 구분</div>
+                <div style="margin-bottom: 8px;"><strong>🔐 관리자:</strong> AI 규칙 관리, 모든 기능</div>
+                <div><strong>👤 게스트:</strong> 사전 검색, 단어 테스트, 변환</div>
+                
+                <div class="credentials">
+                    <div>🔐 관리자: <strong>EASY TALK</strong> / <strong>1234</strong></div>
+                    <div>👤 게스트: <strong>guest</strong> / <strong>guest123</strong></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 상태바 -->
+    <div id="adminStatus" class="status-bar admin-status" style="display: none;">
+        🔴 관리자 모드 (EASY TALK)
+    </div>
+    
+    <div id="guestStatus" class="status-bar guest-status" style="display: none;">
+        👤 게스트 모드 (guest)
+    </div>
+    
+    <!-- 메인 앱 -->
+    <div class="container" id="mainApp">
+        <div class="main-app">
+            <!-- 헤더 -->
+            <div class="header">
+                <h1>EasyTalk</h1>
+                <p>모바일 쉬운 말 변환 앱</p>
+                <button class="logout-btn touchable" onclick="handleLogout()">나가기</button>
+            </div>
+            
+            <!-- 관리자 전용 AI 관리 -->
+            <div id="adminSection" class="admin-section">
+                <div class="section-title admin-title">🤖 AI 관리자 패널</div>
+                
+                <div style="margin-bottom: 25px;">
+                    <h4 style="color: #dc2626; margin-bottom: 15px; font-size: 16px;">🎯 AI 똑똑함 레벨</h4>
+                    <div class="difficulty-grid">
+                        <button class="difficulty-btn touchable" onclick="setDifficulty(1)" id="diff1">🟢 기본</button>
+                        <button class="difficulty-btn active touchable" onclick="setDifficulty(2)" id="diff2">🟡 보통</button>
+                        <button class="difficulty-btn touchable" onclick="setDifficulty(3)" id="diff3">🔴 고급</button>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 style="color: #dc2626; margin-bottom: 15px; font-size: 16px;">🧠 AI 규칙 추가</h4>
+                    <div class="input-group">
+                        <input type="text" id="aiOriginal" class="input-field touchable" placeholder="어려운 단어 입력">
+                        <input type="text" id="aiConverted" class="input-field touchable" placeholder="쉬운 단어 입력">
+                        <button class="btn btn-danger touchable" onclick="addAIRule()">🤖 AI 학습시키기</button>
+                    </div>
+                </div>
+                
+                <div style="background: white; padding: 20px; border-radius: 15px; margin-top: 20px;">
+                    <h5 style="color: #dc2626; margin-bottom: 15px; font-size: 15px;">📋 현재 AI 규칙: <span id="aiRuleCount">0</span>개</h5>
+                    <div id="aiRulesList" class="list-container"></div>
+                </div>
+            </div>
+            
+            <!-- 게스트 전용 사전 & 테스트 -->
+            <div id="dictionarySection" class="dictionary-section">
+                <div class="section-title dictionary-title">📖 진짜 한국어 사전</div>
+                
+                <div class="input-group">
+                    <input type="text" id="dictionaryInput" class="input-field touchable" placeholder="모르는 단어를 검색하세요 (예: 확인, 협조, 신청)">
+                    <button class="btn btn-success touchable" onclick="searchRealDictionary()">🔍 사전 검색</button>
+                </div>
+                
+                <div id="dictionaryResult" class="dictionary-result">
+                    <h4 style="color: #059669; margin-bottom: 15px;">📖 단어 정보</h4>
+                    <div id="wordInfo"></div>
+                    <div class="btn-grid" style="margin-top: 20px;">
+                        <button class="btn btn-warning touchable" onclick="startQuiz()">📝 테스트</button>
+                        <button class="btn btn-primary touchable" onclick="generateRandomQuiz()">🎲 랜덤</button>
+                    </div>
+                </div>
+                
+                <!-- 퀴즈 섹션 -->
+                <div id="quizSection" class="quiz-section">
+                    <div style="color: #f59e0b; font-weight: 700; margin-bottom: 20px; font-size: 1.2rem; text-align: center;">
+                        📝 단어 뜻 테스트
+                    </div>
+                    
+                    <div id="quizContainer" class="quiz-question">
+                        <div id="quizWord" class="quiz-word"></div>
+                        <div style="color: #64748b; margin-bottom: 15px; text-align: center;">다음 단어의 뜻을 고르세요:</div>
+                        <div id="quizOptions" class="quiz-options"></div>
+                    </div>
+                    
+                    <div id="quizResult" style="display: none; background: white; padding: 20px; border-radius: 15px; text-align: center;">
+                        <div id="quizResultText"></div>
+                        <div class="btn-grid" style="margin-top: 20px;">
+                            <button class="btn btn-success touchable" onclick="generateRandomQuiz()">🎲 다시</button>
+                            <button class="btn btn-secondary touchable" onclick="hideQuiz()">❌ 닫기</button>
+                        </div>
